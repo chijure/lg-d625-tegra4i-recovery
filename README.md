@@ -9,7 +9,12 @@ Se restauraron RBL y las 60 copias originales del BCT. Las lecturas completas
 posteriores confirmaron BCT, RBL y EBT byte por byte, y el propietario
 confirmó el arranque en Android. Los datos de Android no se borraron.
 
-El desbloqueo para arrancar imágenes sin firma sigue en investigación.
+En la rama `research/bootloader-unlock`, el parche v2 instalado mediante
+`nvflash --resume --download 5 … --sync` permitió arrancar en RAM una recovery
+stock con su firma alterada. Android también arrancó y la lectura posterior
+confirmó EBT parcheado, RBL original y metadatos BCT actualizados por nvflash.
+Consultar [la prueba y el procedimiento](docs/UNLOCK_RESEARCH.md); todavía
+no se han probado TWRP ni kernels modificados.
 
 ## Qué aporta este repositorio
 

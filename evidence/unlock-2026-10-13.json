@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-13",
+  "device_model": "LG D625",
+  "firmware": "D62510c",
+  "tested_units": 1,
+  "operating_mode": 3,
+  "sbk_burned": false,
+  "installation": "nvflash 4.10.1800 --resume --download 5 candidate-v2.bin --sync",
+  "native_install_exit_code": 0,
+  "original_sha256": "10bc066b7f99256f87b05e82b5087c5c6f815a3e865dc094169176fcc69706f7",
+  "candidate_sha256": "c2c787a409ef6fd3ea01f9225dca4f40d81cf5164de631f9bb067bf4ff43541b",
+  "candidate_changed_bytes": [
+    {
+      "offset": "0xec5e",
+      "before": "0x88",
+      "after": "0x11"
+    },
+    {
+      "offset": "0xec5f",
+      "before": "0xb1",
+      "after": "0xe0"
+    },
+    {
+      "offset": "0x125e5",
+      "before": "0xd0",
+      "after": "0xe0"
+    }
+  ],
+  "ebt_readback_matches_candidate": true,
+  "rbl_entire_partition_unchanged": true,
+  "candidate_aes_cmac_zero_key": "d32d749ea72110408fbe4861288892f2",
+  "all_60_ebt_hashes_match_candidate": true,
+  "all_60_rbl_hashes_unchanged": true,
+  "bct_area_sha256_before": "0f44cee2f99c37ee1f5b55768c33f60e129ef9017aa4837d6c4167b79092cd1e",
+  "bct_area_sha256_after": "985a1ba32accaa88d524097b2c0cbacdcbe61467ccc8bca59cb7f92f741de283",
+  "android_boot_after_install_user_confirmed": true,
+  "fastboot_unlocked": "yes",
+  "fastboot_secure": "no",
+  "signature_test": {
+    "method": "fastboot boot (RAM only)",
+    "image": "stock recovery with one signature byte altered; kernel and ramdisk intact",
+    "sha256": "8c55f9f3b1f3298415d4d8c83a6191a9b2e414645927a297b2c019431841575a",
+    "fastboot_transfer_and_boot": "OKAY",
+    "recovery_screen_user_confirmed": true
+  },
+  "limitations": [
+    "Custom recovery and modified kernels not tested",
+    "Other devices or firmware not tested"
+  ]
+}
