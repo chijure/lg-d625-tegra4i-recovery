@@ -1,0 +1,10 @@
+The payload generators and NV3P recovery client were developed during the
+LG D625 recovery investigation documented here. New project code is MIT.
+
+host/tegrarcm-t148.patch modifies NVIDIA/tegrarcm. Its upstream copyright
+headers and BSD terms remain applicable; see host/NVIDIA-LICENSE. Any locally
+built upstream sources and third-party libraries retain their own licenses.
+
+Vendor firmware, miniloader inputs and device dumps are local inputs, not
+included in this public source repository. No affiliation with or endorsement
+by NVIDIA, LG, Wiko, or the authors of the referenced projects is implied.

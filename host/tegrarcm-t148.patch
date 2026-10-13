@@ -1,0 +1,647 @@
+diff --git a/src/main.c b/src/main.c
+index b1111e7..0d5f2e6 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -80,6 +80,8 @@ static int download_bootloader(nv3p_handle_t h3p, char *filename,
+ 			uint32_t entry, uint32_t loadaddr,
+ 			const char *pkc_keyfile, const char *signed_msgs_file);
+ static int read_bct(nv3p_handle_t h3p, char *filename);
++static int raw_write(nv3p_handle_t h3p, char *filename, uint32_t sector);
++static int raw_read(nv3p_handle_t h3p, char *filename, uint32_t sector, uint32_t count);
+ static int sign_blob(const char *blob_filename, const char *pkc_keyfile,
+ 				const char *signed_msgs_file);
+ 
+@@ -107,6 +109,11 @@ enum cmdline_opts {
+ 	OPT_SOC,
+ 	OPT_DOWNLOAD_SIGNED_MSGS,
+ 	OPT_USB_TIMEOUT,
++	OPT_RAWWRITE_FILE,
++	OPT_RAWWRITE_SECTOR,
++	OPT_RAWREAD_FILE,
++	OPT_RAWREAD_SECTOR,
++	OPT_RAWREAD_COUNT,
+ 	OPT_END,
+ };
+ 
+@@ -159,6 +166,12 @@ static void usage(char *progname)
+ 	fprintf(stderr, "\t\tDownload signed messages\n");
+ 	fprintf(stderr, "\t--usb-timeout=<timeout_ms>\n");
+ 	fprintf(stderr, "\t\tSpecify usb transfer timeout value in ms, 0 for unlimited timeout\n");
++	fprintf(stderr, "\t--rawwrite=<file> --rawwritesector=<sector>\n");
++	fprintf(stderr, "\t\tCUSTOM (not a real NVIDIA command, see\n");
++	fprintf(stderr, "\t\tanalysis_artifacts/miniloaders/RAW_WRITE_PLAN.md): writes <file>\n");
++	fprintf(stderr, "\t\t(must be an exact multiple of 512 bytes) directly to eMMC starting\n");
++	fprintf(stderr, "\t\tat 512-byte sector <sector>, via our own patched miniloader.\n");
++	fprintf(stderr, "\t\thardware_tested: false - test on a scratch sector first, never BCT/EBT/RBL.\n");
+ 	fprintf(stderr, "\n");
+ }
+ 
+@@ -245,6 +258,14 @@ int main(int argc, char **argv)
+ 	char *signed_msgs_file = NULL;
+ 	uint32_t soc = 0;
+ 	bool download_signed_msgs = false;
++	char *rawwrite_file = NULL;
++	uint32_t rawwrite_sector = 0;
++	bool have_rawwrite_sector = false;
++	char *rawread_file = NULL;
++	uint32_t rawread_sector = 0;
++	uint32_t rawread_count = 0;
++	bool have_rawread_sector = false;
++	bool have_rawread_count = false;
+ 
+ 	static struct option long_options[] = {
+ 		[OPT_BCT]        = {"bct", 1, 0, 0},
+@@ -264,6 +285,11 @@ int main(int argc, char **argv)
+ 		[OPT_SOC]        = {"soc", 1, 0, 0},
+ 		[OPT_DOWNLOAD_SIGNED_MSGS] = {"download-signed-msgs", 0, 0, 0},
+ 		[OPT_USB_TIMEOUT] = {"usb-timeout", 1, 0, 0},
++		[OPT_RAWWRITE_FILE] = {"rawwrite", 1, 0, 0},
++		[OPT_RAWWRITE_SECTOR] = {"rawwritesector", 1, 0, 0},
++		[OPT_RAWREAD_FILE] = {"rawread", 1, 0, 0},
++		[OPT_RAWREAD_SECTOR] = {"rawreadsector", 1, 0, 0},
++		[OPT_RAWREAD_COUNT] = {"rawreadcount", 1, 0, 0},
+ 		[OPT_END]        = {0, 0, 0, 0}
+ 	};
+ 	// parse command line args
+@@ -324,6 +350,24 @@ int main(int argc, char **argv)
+ 			case OPT_USB_TIMEOUT:
+ 				usb_timeout = strtoul(optarg, NULL, 0);
+ 				break;
++			case OPT_RAWWRITE_FILE:
++				rawwrite_file = optarg;
++				break;
++			case OPT_RAWWRITE_SECTOR:
++				rawwrite_sector = strtoul(optarg, NULL, 0);
++				have_rawwrite_sector = true;
++				break;
++			case OPT_RAWREAD_FILE:
++				rawread_file = optarg;
++				break;
++			case OPT_RAWREAD_SECTOR:
++				rawread_sector = strtoul(optarg, NULL, 0);
++				have_rawread_sector = true;
++				break;
++			case OPT_RAWREAD_COUNT:
++				rawread_count = strtoul(optarg, NULL, 0);
++				have_rawread_count = true;
++				break;
+ 			case OPT_HELP:
+ 			default:
+ 				usage(argv[0]);
+@@ -520,6 +564,34 @@ int main(int argc, char **argv)
+ 		exit(0);
+ 	}
+ 
++	// custom raw-write command (opcode 5, our own patched miniloader only -
++	// see analysis_artifacts/miniloaders/RAW_WRITE_PLAN.md). hardware_tested:
++	// false. Deliberately skips GET_PLATFORM_INFO/BCT/bootloader download
++	// below - this talks directly to the patched miniloader's own new
++	// handler, nothing else needs to run first.
++	if (rawwrite_file) {
++		if (!have_rawwrite_sector)
++			error(1, EINVAL, "--rawwrite requires --rawwritesector=<sector>");
++		printf("raw-writing %s to sector %u...\n", rawwrite_file, rawwrite_sector);
++		ret = raw_write(h3p, rawwrite_file, rawwrite_sector);
++		if (ret)
++			error(1, ret, "error raw-writing %s", rawwrite_file);
++		printf("done!\n");
++		exit(0);
++	}
++
++	if (rawread_file) {
++		if (!have_rawread_sector || !have_rawread_count)
++			error(1, EINVAL, "--rawread requires --rawreadsector=<sector> and --rawreadcount=<count>");
++		printf("raw-reading %u sector(s) from sector %u to %s...\n",
++			rawread_count, rawread_sector, rawread_file);
++		ret = raw_read(h3p, rawread_file, rawread_sector, rawread_count);
++		if (ret)
++			error(1, ret, "error raw-reading to %s", rawread_file);
++		printf("done!\n");
++		exit(0);
++	}
++
+ 	// get platform info and dump it
+ 	ret = nv3p_cmd_send(h3p, NV3P_CMD_GET_PLATFORM_INFO, (uint8_t *)&info);
+ 	if (ret)
+@@ -547,8 +619,23 @@ int main(int argc, char **argv)
+ 	// download the bootloader
+ 	ret = download_bootloader(h3p, blfile, entryaddr, loadaddr,
+ 				pkc_keyfile, signed_msgs_file);
+-	if (ret)
++	if (ret) {
++		int ret2;
++		fprintf(stderr, "DIAG: download_bootloader failed (ret=%d), probing if device still responds to GET_PLATFORM_INFO...\n", ret);
++		ret2 = nv3p_cmd_send(h3p, NV3P_CMD_GET_PLATFORM_INFO, (uint8_t *)&info);
++		if (ret2) {
++			fprintf(stderr, "DIAG: probe nv3p_cmd_send FAILED (ret2=%d) - device is unresponsive to new commands\n", ret2);
++		} else {
++			ret2 = wait_status(h3p);
++			if (ret2) {
++				fprintf(stderr, "DIAG: probe wait_status FAILED (ret2=%d) - device accepted cmd but didn't ack\n", ret2);
++			} else {
++				fprintf(stderr, "DIAG: probe SUCCEEDED - device still alive and responding normally!\n");
++				dump_platform_info(&info);
++			}
++		}
+ 		error(1, ret, "error downloading bootloader: %s", blfile);
++	}
+ 
+ 	nv3p_close(h3p);
+ 	usb_close(usb);
+@@ -612,6 +699,9 @@ static int initialize_rcm(uint16_t devid, usb_device_t *usb,
+ 	} else if ((devid & 0xff) == USB_DEVID_NVIDIA_TEGRA124) {
+ 		dprintf("initializing RCM version 40\n");
+ 		ret = rcm_init(RCM_VERSION_40, pkc_keyfile);
++	} else if ((devid & 0xff) == USB_DEVID_NVIDIA_TEGRA148) {
++		dprintf("initializing RCM version T148\n");
++		ret = rcm_init(RCM_VERSION_T148, pkc_keyfile);
+ 	} else {
+ 		fprintf(stderr, "unknown tegra device: 0x%x\n", devid);
+ 		return errno;
+@@ -648,7 +738,7 @@ static int initialize_rcm(uint16_t devid, usb_device_t *usb,
+ 		free(msg_buff); // release memory allocated by rcm_create_msg
+ 		msg_buff = NULL;
+ 
+-		fd = open(query_version_rcm_filename, O_RDONLY, 0);
++		fd = open(query_version_rcm_filename, O_RDONLY | O_BINARY, 0);
+ 		if (fd < 0) {
+ 			fprintf(stderr, "error opening %s\n",
+ 				query_version_rcm_filename);
+@@ -738,6 +828,10 @@ static int initialize_miniloader(uint16_t devid, usb_device_t *usb,
+ 		miniloader = miniloader_tegra124;
+ 		miniloader_size = sizeof(miniloader_tegra124);
+ 		miniloader_entry = TEGRA124_MINILOADER_ENTRY;
++	} else if ((devid & 0xff) == USB_DEVID_NVIDIA_TEGRA148) {
++		miniloader = NULL;
++		miniloader_size = 0;
++		miniloader_entry = 0x4000e000;
+ 	} else {
+ 		fprintf(stderr, "unknown tegra device: 0x%x\n", devid);
+ 		return ENODEV;
+@@ -762,7 +856,7 @@ static int initialize_miniloader(uint16_t devid, usb_device_t *usb,
+ 
+ 	// loading ml or signed ml rcm from a file
+ 	if (filename) {
+-		fd = open(filename, O_RDONLY, 0);
++		fd = open(filename, O_RDONLY | O_BINARY, 0);
+ 		if (fd < 0) {
+ 			dprintf("error opening %s\n", filename);
+ 			return errno;
+@@ -864,11 +958,11 @@ static int send_file(nv3p_handle_t h3p, const char *filename)
+ 	int fd = -1;
+ 	struct stat sb;
+ 
+-#define NVFLASH_DOWNLOAD_CHUNK (1024 * 64)
++#define NVFLASH_DOWNLOAD_CHUNK (1024 * 2)
+ 
+ 	printf("sending file: %s\n", filename );
+ 
+-	fd = open(filename, O_RDONLY, 0);
++	fd = open(filename, O_RDONLY | O_BINARY, 0);
+ 	if (fd < 0) {
+ 		ret = errno;
+ 		goto fail;
+@@ -1122,7 +1216,7 @@ static int read_bct(nv3p_handle_t h3p, char *filename)
+ 		goto out;
+ 	}
+ 
+-	fd = open(filename, O_WRONLY | O_CREAT, 0644);
++	fd = open(filename, O_WRONLY | O_CREAT | O_BINARY, 0644);
+ 	if (fd < 0) {
+ 		dprintf("error opening %s for reading\n", filename);
+ 		ret = errno;
+@@ -1161,7 +1255,7 @@ static int download_bootloader(nv3p_handle_t h3p, char *filename,
+ 	int fd;
+ 	struct stat sb;
+ 
+-	fd = open(filename, O_RDONLY, 0);
++	fd = open(filename, O_RDONLY | O_BINARY, 0);
+ 	if (fd < 0) {
+ 		dprintf("error opening %s for reading\n", filename);
+ 		return errno;
+@@ -1241,6 +1335,188 @@ static int download_bootloader(nv3p_handle_t h3p, char *filename,
+ 	return 0;
+ }
+ 
++#define RAWWRITE_SECTOR_SIZE 512
++
++/*
++ * raw_write(): custom command (opcode 5), not a real NVIDIA command - see
++ * analysis_artifacts/miniloaders/RAW_WRITE_PLAN.md. hardware_tested: false.
++ * Writes `filename` (must be an exact multiple of 512 bytes) directly to
++ * eMMC starting at 512-byte sector `sector`, talking only to our own
++ * patched miniloader's new handler - bypasses bct_acquire/bct_process/
++ * DL_BL/stage2 entirely. One nv3p DATA packet (512 bytes) per sector, each
++ * individually ACKed by the device inside its own receive loop. Does NOT
++ * call wait_status() - that waits for a real NV3P_CMD_STATUS exchange our
++ * simple device-side handler never sends (see RAW_WRITE_PLAN.md); our own
++ * handler instead sends a plain ACK for the command itself immediately,
++ * which is all nv3p_cmd_send()'s own internal nv3p_wait_ack() needs.
++ */
++static int raw_write(nv3p_handle_t h3p, char *filename, uint32_t sector)
++{
++	int ret;
++	int fd;
++	struct stat sb;
++	nv3p_cmd_raw_write_t arg;
++	uint8_t buf[RAWWRITE_SECTOR_SIZE];
++	uint32_t count, i;
++	ssize_t n;
++
++	fd = open(filename, O_RDONLY | O_BINARY, 0);
++	if (fd < 0) {
++		dprintf("error opening %s for reading\n", filename);
++		return errno;
++	}
++
++	if (fstat(fd, &sb)) {
++		dprintf("error on fstat of %s\n", filename);
++		close(fd);
++		return errno;
++	}
++
++	if (sb.st_size == 0 || (sb.st_size % RAWWRITE_SECTOR_SIZE) != 0) {
++		dprintf("%s size (%lld) is not an exact multiple of %d bytes\n",
++			filename, (long long)sb.st_size, RAWWRITE_SECTOR_SIZE);
++		close(fd);
++		return EINVAL;
++	}
++	count = (uint32_t)(sb.st_size / RAWWRITE_SECTOR_SIZE);
++
++	arg.sector = sector;
++	arg.count = count;
++
++	ret = nv3p_cmd_send(h3p, NV3P_CMD_RAW_WRITE, (uint8_t *)&arg);
++	if (ret) {
++		nv3p_platform_info_t info;
++		int ret2;
++		fprintf(stderr, "DIAG: raw write command failed (ret=%d), probing if device still responds to GET_PLATFORM_INFO...\n", ret);
++		ret2 = nv3p_cmd_send(h3p, NV3P_CMD_GET_PLATFORM_INFO, (uint8_t *)&info);
++		if (ret2) {
++			fprintf(stderr, "DIAG: probe nv3p_cmd_send FAILED (ret2=%d) - device is unresponsive to new commands\n", ret2);
++		} else {
++			fprintf(stderr, "DIAG: probe SUCCEEDED - device still alive and responding normally! Chip ID: 0x%x\n", (uint32_t)info.chip_id.id);
++		}
++		dprintf("error sending raw write command\n");
++		close(fd);
++		return ret;
++	}
++
++	/* sector/count sent as a separate 8-byte DATA packet, not as inline
++	 * command args - see the comment in nv3p.c's nv3p_write_cmd(). */
++	ret = nv3p_data_send(h3p, (uint8_t *)&arg, sizeof(arg));
++	if (ret) {
++		dprintf("error sending raw write metadata\n");
++		close(fd);
++		return ret;
++	}
++
++	for (i = 0; i < count; i++) {
++		n = read(fd, buf, RAWWRITE_SECTOR_SIZE);
++		if (n != RAWWRITE_SECTOR_SIZE) {
++			dprintf("short read on %s (sector %u)\n", filename, i);
++			close(fd);
++			return EIO;
++		}
++
++		ret = nv3p_data_send(h3p, buf, RAWWRITE_SECTOR_SIZE);
++		if (ret) {
++			dprintf("error sending sector %u (device sector %u)\n",
++				i, sector + i);
++			close(fd);
++			return ret;
++		}
++
++		printf("\rsector %u/%u (device sector %u) written",
++			i + 1, count, sector + i);
++		fflush(stdout);
++	}
++	printf("\n");
++
++	close(fd);
++	return 0;
++}
++
++/*
++ * raw_read(): custom command (opcode 0), not a real NVIDIA command - see
++ * analysis_artifacts/miniloaders/RAW_WRITE_PLAN.md. hardware_tested: false.
++ * Reads `count` 512-byte sectors starting at `sector` directly from eMMC
++ * into `filename`, via our own patched miniloader's new handler - added
++ * specifically to verify raw_write()'s own output, since stock
++ * nvflash/stage2 are both blocked by the same corrupted on-flash BCT this
++ * whole project exists because of (confirmed again this session).
++ */
++static int raw_read(nv3p_handle_t h3p, char *filename, uint32_t sector, uint32_t count)
++{
++	int ret;
++	int fd;
++	nv3p_cmd_raw_write_t arg; /* same {sector,count} shape for both commands */
++	uint8_t buf[RAWWRITE_SECTOR_SIZE];
++	uint32_t i;
++	ssize_t n;
++
++	if (count == 0) {
++		dprintf("--rawreadcount must be > 0\n");
++		return EINVAL;
++	}
++
++	fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
++	if (fd < 0) {
++		dprintf("error opening %s for writing\n", filename);
++		return errno;
++	}
++
++	arg.sector = sector;
++	arg.count = count;
++
++	ret = nv3p_cmd_send(h3p, NV3P_CMD_RAW_READ, (uint8_t *)&arg);
++	if (ret) {
++		nv3p_platform_info_t info;
++		int ret2;
++		fprintf(stderr, "DIAG: raw read command failed (ret=%d), probing if device still responds to GET_PLATFORM_INFO...\n", ret);
++		ret2 = nv3p_cmd_send(h3p, NV3P_CMD_GET_PLATFORM_INFO, (uint8_t *)&info);
++		if (ret2) {
++			fprintf(stderr, "DIAG: probe nv3p_cmd_send FAILED (ret2=%d) - device is unresponsive to new commands\n", ret2);
++		} else {
++			fprintf(stderr, "DIAG: probe SUCCEEDED - device still alive and responding normally! Chip ID: 0x%x\n", (uint32_t)info.chip_id.id);
++		}
++		dprintf("error sending raw read command\n");
++		close(fd);
++		return ret;
++	}
++
++	/* sector/count sent as a separate 8-byte DATA packet, not as inline
++	 * command args - see the comment in nv3p.c's nv3p_write_cmd(). */
++	ret = nv3p_data_send(h3p, (uint8_t *)&arg, sizeof(arg));
++	if (ret) {
++		dprintf("error sending raw read metadata\n");
++		close(fd);
++		return ret;
++	}
++
++	for (i = 0; i < count; i++) {
++		ret = nv3p_data_recv(h3p, buf, RAWWRITE_SECTOR_SIZE);
++		if (ret) {
++			dprintf("error receiving sector %u (device sector %u)\n",
++				i, sector + i);
++			close(fd);
++			return ret;
++		}
++
++		n = write(fd, buf, RAWWRITE_SECTOR_SIZE);
++		if (n != RAWWRITE_SECTOR_SIZE) {
++			dprintf("short write to %s (sector %u)\n", filename, i);
++			close(fd);
++			return EIO;
++		}
++
++		printf("\rsector %u/%u (device sector %u) read",
++			i + 1, count, sector + i);
++		fflush(stdout);
++	}
++	printf("\n");
++
++	close(fd);
++	return 0;
++}
++
+ static int sign_blob(const char *blob_filename, const char *pkc_keyfile,
+ 			const char *signed_msgs_file)
+ {
+diff --git a/src/nv3p.c b/src/nv3p.c
+index a237f6a..83ad642 100644
+--- a/src/nv3p.c
++++ b/src/nv3p.c
+@@ -297,6 +297,10 @@ int nv3p_cmd_send(nv3p_handle_t h3p, uint32_t command, void *args)
+ 
+ 	h3p->sequence++;
+ 
++#ifdef _WIN32
++	Sleep(200);
++#endif
++
+ 	// wait for ack/nack
+ 	ret = nv3p_wait_ack(h3p);
+ 	if (ret)
+@@ -335,6 +339,24 @@ static void nv3p_write_cmd(nv3p_handle_t h3p, uint32_t command, void *args,
+ 		WRITE32(tmp, a->length);
+ 		break;
+ 	}
++	case NV3P_CMD_RAW_WRITE:
++	case NV3P_CMD_RAW_READ:
++		/*
++		 * length=0, no inline args - matches GET_PLATFORM_INFO's exact
++		 * wire shape. Confirmed live (2026-10-06) that sending inline
++		 * args here (like DL_BCT's 1-word shape) makes the STOCK,
++		 * UNMODIFIED miniloader's generic command-receive crash/desync
++		 * for these two unassigned command ids specifically (reproduced
++		 * against the pristine binary, unrelated to our own patch) -
++		 * likely an args-length lookup that only covers NVIDIA's real
++		 * command ids. sector/count are instead sent as a separate
++		 * 8-byte DATA packet right after the command ack - see
++		 * raw_write()/raw_read() in main.c and RAW_WRITE_PLAN.md.
++		 */
++		*length = 0;
++		WRITE32(tmp, *length);
++		WRITE32(tmp, command);
++		break;
+ 	case NV3P_CMD_DL_BL:
+ 	{
+ 		nv3p_cmd_dl_bl_t *a = (nv3p_cmd_dl_bl_t *)args;
+@@ -375,7 +397,16 @@ static int nv3p_wait_ack(nv3p_handle_t h3p)
+ 		length += NV3P_PACKET_SIZE_NACK;
+ 		break;
+ 	default:
+-		dprintf("unknown packet type received: 0x%x\n", hdr.packet_type);
++		fprintf(stderr, "unknown packet type received: 0x%x (seq=%u)\n", hdr.packet_type, hdr.sequence);
++		if (hdr.packet_type == NV3P_PACKET_TYPE_CMD) {
++			uint32_t cmdbuf[2] = {0,0};
++			int r2 = nv3p_read(h3p->usb, (uint8_t *)cmdbuf, 8);
++			if (r2 == 0) {
++				fprintf(stderr, "  device-sent CMD payload: command=0x%x arg2=0x%x\n", cmdbuf[0], cmdbuf[1]);
++			} else {
++				fprintf(stderr, "  (failed to read CMD payload: %d)\n", r2);
++			}
++		}
+ 		return EINVAL;
+ 	}
+ 
+@@ -385,6 +416,8 @@ static int nv3p_wait_ack(nv3p_handle_t h3p)
+ 		if (ret)
+ 			return ret;
+ 
++		fprintf(stderr, "NACK CODE: 0x%x\n", h3p->last_nack);
++
+ 		recv_checksum += nv3p_cksum((uint8_t *)&h3p->last_nack, 4);
+ 	}
+ 
+@@ -423,6 +456,8 @@ static int nv3p_get_cmd_return(nv3p_handle_t h3p, uint32_t command, void *args)
+ 		break;
+ 	case NV3P_CMD_DL_BCT:
+ 	case NV3P_CMD_DL_BL:
++	case NV3P_CMD_RAW_WRITE:
++	case NV3P_CMD_RAW_READ:
+ 		break;
+ 	default:
+ 		dprintf("unknown command: 0x%x\n", command);
+@@ -454,6 +489,11 @@ static int nv3p_recv_hdr(nv3p_handle_t h3p, nv3p_header_t *hdr,
+ 		return ret;
+ 	}
+ 
++	fprintf(stderr, "RAW HEADER BYTES:");
++	for (uint32_t i = 0; i < length; i++)
++		fprintf(stderr, " %02x", tmp[i]);
++	fprintf(stderr, "\n");
++
+ 	READ32(tmp, hdr->version);
+ 	READ32(tmp, hdr->packet_type);
+ 	READ32(tmp, hdr->sequence);
+@@ -761,6 +801,7 @@ int nv3p_data_send(nv3p_handle_t h3p, uint8_t *data, uint32_t length)
+ 	checksum = nv3p_cksum(packet, hdrlen);
+ 	checksum += nv3p_cksum(data, length);
+ 	checksum = ~checksum + 1;
++	fprintf(stderr, "HOST computed DATA checksum: 0x%x (hdrlen=%u datalen=%u)\n", checksum, hdrlen, length);
+ 
+ 	// send the headers
+ 	ret = usb_write(h3p->usb, packet, hdrlen);
+@@ -779,6 +820,10 @@ int nv3p_data_send(nv3p_handle_t h3p, uint8_t *data, uint32_t length)
+ 
+ 	h3p->sequence++;
+ 
++#ifdef _WIN32
++	Sleep(200);
++#endif
++
+ 	// wait for ack/nack
+ 	ret = nv3p_wait_ack(h3p);
+ 	if (ret)
+diff --git a/src/nv3p.h b/src/nv3p.h
+index d1ce78e..ddc665e 100644
+--- a/src/nv3p.h
++++ b/src/nv3p.h
+@@ -38,9 +38,16 @@
+ #define NV3P_STRING_MAX (32)
+ 
+ // commands
++#define NV3P_CMD_RAW_READ                0x00 // custom: not a real NVIDIA
++                                               // command, see RAW_WRITE_PLAN.md
+ #define NV3P_CMD_GET_PLATFORM_INFO       0x01
+ #define NV3P_CMD_GET_BCT                 0x02
+ #define NV3P_CMD_DL_BCT                  0x04
++#define NV3P_CMD_RAW_WRITE               0x05 // custom: not a real NVIDIA
++                                               // command, repurposes an
++                                               // unused opcode handled by our
++                                               // own patched miniloader - see
++                                               // analysis_artifacts/miniloaders/RAW_WRITE_PLAN.md
+ #define NV3P_CMD_DL_BL                   0x06
+ #define NV3P_CMD_STATUS                  0x0a
+ 
+@@ -185,6 +192,17 @@ typedef struct {
+ 	uint32_t entry; // Execution entry point
+ } nv3p_cmd_dl_bl_t;
+ 
++/*
++ * nv3p_cmd_raw_write_t: custom command (opcode 5). Writes `count` 512-byte
++ * sectors starting at `sector` directly to eMMC, one nv3p DATA packet (512
++ * bytes) per sector, each individually ACKed by the device - see
++ * analysis_artifacts/miniloaders/RAW_WRITE_PLAN.md. hardware_tested: false.
++ */
++typedef struct {
++	uint32_t sector;
++	uint32_t count;
++} nv3p_cmd_raw_write_t;
++
+ int nv3p_open(nv3p_handle_t *h3p, usb_device_t *usb);
+ void nv3p_close(nv3p_handle_t h3p);
+ int nv3p_cmd_send(nv3p_handle_t h3p, uint32_t command, void *args);
+diff --git a/src/rcm.c b/src/rcm.c
+index aa8acf7..42195b1 100644
+--- a/src/rcm.c
++++ b/src/rcm.c
+@@ -94,6 +94,11 @@ int rcm_init(uint32_t version, const char *keyfile)
+ 		message_size = sizeof(rcm40_msg_t);
+ 		ret = 0;
+ 	}
++	else if (version == RCM_VERSION_T148) {
++		rcm_version = version;
++		message_size = sizeof(rcm35_msg_t);
++		ret = 0;
++	}
+ 
+ 	rcm_keyfile = keyfile;
+ 
+@@ -108,6 +113,8 @@ uint32_t rcm_get_msg_len(uint8_t *msg)
+ 		return ((rcm35_msg_t*)msg)->len_insecure;
+ 	else if (rcm_version == RCM_VERSION_40)
+ 		return ((rcm40_msg_t*)msg)->len_insecure;
++	else if (rcm_version == RCM_VERSION_T148)
++		return ((rcm35_msg_t*)msg)->len_insecure;
+ 	else
+ 		return 0;
+ }
+@@ -163,6 +170,8 @@ static int rcm_sign_msg(uint8_t *buf)
+ 		return rcm40_sign_msg(buf);
+ 	else if (rcm_version == RCM_VERSION_1)
+ 		return rcm1_sign_msg(buf);
++	else if (rcm_version == RCM_VERSION_T148)
++		return rcm35_sign_msg(buf);
+ 	else
+ 		return -EINVAL;
+ }
+@@ -272,6 +281,11 @@ static void rcm_init_msg(
+ 	else if (rcm_version == RCM_VERSION_1)
+ 		rcm1_init_msg(buf, msg_len, opcode, args,
+ 			      args_len, payload_len);
++	else if (rcm_version == RCM_VERSION_T148) {
++		rcm35_init_msg(buf, msg_len, opcode, args,
++			       args_len, payload_len);
++		((rcm35_msg_t *)buf)->rcm_version = RCM_VERSION_T148;
++	}
+ }
+ 
+ static void rcm35_init_msg(
+diff --git a/src/rcm.h b/src/rcm.h
+index d5fef30..3c108d3 100644
+--- a/src/rcm.h
++++ b/src/rcm.h
+@@ -37,6 +37,7 @@
+ #define RCM_VERSION_1 (NVBOOT_VERSION(1, 0))
+ #define RCM_VERSION_35 (NVBOOT_VERSION(0x35, 1))
+ #define RCM_VERSION_40 (NVBOOT_VERSION(0x40, 1))
++#define RCM_VERSION_T148 (NVBOOT_VERSION(0x14, 1))
+ #define RCM_VERSION_MAJOR(ver) ((ver) >> 16)
+ #define RCM_VERSION_MINOR(ver) ((ver) & 0xffff)
+ 
+diff --git a/src/usb.c b/src/usb.c
+index 5bed1ef..d6ba746 100644
+--- a/src/usb.c
++++ b/src/usb.c
+@@ -79,6 +79,7 @@ static int usb_match(libusb_device *dev, uint16_t venid, uint16_t *devid
+ 	case USB_DEVID_NVIDIA_TEGRA30:
+ 	case USB_DEVID_NVIDIA_TEGRA114:
+ 	case USB_DEVID_NVIDIA_TEGRA124:
++	case USB_DEVID_NVIDIA_TEGRA148:
+ 		break;
+ 	default:
+ 		dprintf("non-Tegra NVIDIA USB device: 0x%x:0x%x\n",
+@@ -270,6 +271,8 @@ usb_device_t *usb_open(uint16_t venid, uint16_t *devid
+ 		dprintf("usb_get_interface failed\n");
+ 		goto fail;
+ 	}
++	fprintf(stderr, "ENDPOINTS: iface=%u in=0x%02x out=0x%02x\n",
++		usb->iface_num, usb->endpt_in, usb->endpt_out);
+ 
+ 	// claim the interface
+ 	libusb_claim_interface(usb->handle, usb->iface_num);
+diff --git a/src/usb.h b/src/usb.h
+index e8fcd67..66415b0 100644
+--- a/src/usb.h
++++ b/src/usb.h
+@@ -42,6 +42,7 @@
+ #define USB_DEVID_NVIDIA_TEGRA30 0x30
+ #define USB_DEVID_NVIDIA_TEGRA114 0x35
+ #define USB_DEVID_NVIDIA_TEGRA124 0x40
++#define USB_DEVID_NVIDIA_TEGRA148 0x14
+ 
+ typedef struct {
+ 	libusb_device_handle *handle;

@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+/out/
+/vendor/*.bin
+/private/*
+!/private/README.md
+*.exe
+*.dll
+*.pcap
+*.pcapng
+*.img
+*.bin
+*.zip
+*.bundle

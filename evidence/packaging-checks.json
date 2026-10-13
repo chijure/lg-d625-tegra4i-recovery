@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-13",
+  "offline_unit_tests": {
+    "passed": 6,
+    "hardware_access": false
+  },
+  "payload_reproduces_hardware_baseline": true,
+  "payload_sha256": "733a1c90f1315a8c03b7a6c8230d65011fac04c2135bd32104a51d066efbbf79",
+  "host_patch_applies_to_pinned_upstream": true,
+  "mingw64_host_build_passed": true,
+  "rebuilt_host_cli_version": "tegrarcm 1.8",
+  "rebuilt_host_hardware_tested": false,
+  "note": "The original host binary was hardware tested; the rebuilt host was checked offline only."
+}

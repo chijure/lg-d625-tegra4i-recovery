@@ -1,0 +1,33 @@
+{
+  "model": "LG D625",
+  "soc": "Tegra 4i / T148",
+  "scope": "Hardware verified on one documented unit; other firmware and fuse configurations are unverified",
+  "apx_vid": 2389,
+  "apx_pid": 30484,
+  "rcm_version": "0x140001",
+  "nv3p_version": 1,
+  "sector_bytes": 512,
+  "block_bytes": 16384,
+  "bct": {
+    "sector": 128,
+    "sectors": 1920,
+    "copies": 60,
+    "slot_bytes": 16384,
+    "structure_bytes": 5424,
+    "rbl_hash_offset": "0x1424",
+    "original_region_sha256": "1771092fc30b1ec43921eab3784f32c649afedd817cc248776d4a0adc7976107"
+  },
+  "rbl": {
+    "sector": 12288,
+    "sectors": 1680,
+    "original_sha256": "10bc066b7f99256f87b05e82b5087c5c6f815a3e865dc094169176fcc69706f7",
+    "original_aes_cmac_zero_key": "1a5865af881f65a83ffef29824ed08d0"
+  },
+  "ebt": {
+    "sector": 24576,
+    "sectors": 1680,
+    "original_sha256": "10bc066b7f99256f87b05e82b5087c5c6f815a3e865dc094169176fcc69706f7"
+  },
+  "scratch_sector": 4096,
+  "upstream_tegrarcm_commit": "f6a46f1b342fe5ff531281e605b52b2a604a8aac"
+}

@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-13",
+  "verification": {
+    "BCT": {
+      "sector_512": 128,
+      "count": 1920,
+      "bytes": 983040,
+      "sha256": "1771092fc30b1ec43921eab3784f32c649afedd817cc248776d4a0adc7976107",
+      "expected_sha256": "1771092fc30b1ec43921eab3784f32c649afedd817cc248776d4a0adc7976107",
+      "matches_original": true
+    },
+    "RBL": {
+      "sector_512": 12288,
+      "count": 1680,
+      "bytes": 860160,
+      "sha256": "10bc066b7f99256f87b05e82b5087c5c6f815a3e865dc094169176fcc69706f7",
+      "expected_sha256": "10bc066b7f99256f87b05e82b5087c5c6f815a3e865dc094169176fcc69706f7",
+      "matches_original": true
+    },
+    "EBT": {
+      "sector_512": 24576,
+      "count": 1680,
+      "bytes": 860160,
+      "sha256": "10bc066b7f99256f87b05e82b5087c5c6f815a3e865dc094169176fcc69706f7",
+      "expected_sha256": "10bc066b7f99256f87b05e82b5087c5c6f815a3e865dc094169176fcc69706f7",
+      "matches_original": true
+    }
+  },
+  "boot_status": "Android boot confirmed by the device owner on 2026-10-13",
+  "all_regions_match": true,
+  "android_boot_confirmed_by_user": true,
+  "device": {
+    "model": "LG D625",
+    "soc": "Tegra 4i / T148",
+    "apx_vid_pid": "0955:7714",
+    "tested_units": 1,
+    "reported_operating_mode": 3,
+    "sbk_burned": false
+  }
+}
